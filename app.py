@@ -36,20 +36,24 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             cliente TEXT NOT NULL,
             titolo TEXT NOT NULL,
+            oggetto TEXT DEFAULT '',
             data_inizio TEXT NOT NULL,
             data_scadenza TEXT NOT NULL,
             importo REAL,
             soggetto_istat TEXT DEFAULT 'No',
             ramo TEXT DEFAULT 'Ufficio Tecnico',
             sottocategoria TEXT DEFAULT '',
-            file_path TEXT
+            file_path TEXT,
+            note TEXT DEFAULT ''
         )
     ''')
     
     # Migrazioni automatiche per database esistenti
     for col, col_type in [("soggetto_istat", "TEXT DEFAULT 'No'"), 
                           ("ramo", "TEXT DEFAULT 'Ufficio Tecnico'"), 
-                          ("sottocategoria", "TEXT DEFAULT ''")]:
+                          ("sottocategoria", "TEXT DEFAULT ''"),
+                          ("oggetto", "TEXT DEFAULT ''"),
+                          ("note", "TEXT DEFAULT ''")]:
         try:
             cursor.execute(f"ALTER TABLE contratti ADD COLUMN {col} {col_type}")
         except sqlite3.OperationalError:
@@ -108,19 +112,22 @@ else:
             sottocategoria_selezionata = st.selectbox("Sottocategoria Ufficio Tecnico", SOTTOCATEGORIE_UFFICIO_TECNICO)
 
         with st.form("form_contratto", clear_on_submit=True):
-            cliente = st.text_input("Nome Cliente / Fornitore")
-            titolo = st.text_input("Titolo Contratto")
+            cliente = st.text_input("Nome Cliente / Fornitore *")
+            titolo = st.text_input("Titolo Contratto *")
+            oggetto = st.text_area("Oggetto del Contratto *", placeholder="Descrizione dell'oggetto del contratto...")
+            
             data_inizio = st.date_input("Data Inizio", datetime.now())
             data_scadenza = st.date_input("Data Scadenza", datetime.now())
             importo = st.number_input("Importo (€)", min_value=0.0, step=100.0)
             
             soggetto_istat = st.checkbox("Soggetto ad adeguamento ISTAT")
+            note = st.text_area("Note (opzionale)", placeholder="Eventuali annotazioni, particolarità o dettagli aggiuntivi...")
             file_allegato = st.file_uploader("Allegato (PDF/DOC)", type=["pdf", "doc", "docx"])
             
             salva = st.form_submit_button("Salva Contratto")
             
             if salva:
-                if cliente.strip() and titolo.strip():
+                if cliente.strip() and titolo.strip() and oggetto.strip():
                     try:
                         path_salvato = None
                         if file_allegato is not None:
@@ -133,9 +140,9 @@ else:
                         conn = sqlite3.connect("database.sqlite")
                         cursor = conn.cursor()
                         cursor.execute('''
-                            INSERT INTO contratti (cliente, titolo, data_inizio, data_scadenza, importo, soggetto_istat, ramo, sottocategoria, file_path)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        ''', (cliente.strip(), titolo.strip(), str(data_inizio), str(data_scadenza), importo, istat_val, ramo_selezionato, sottocategoria_selezionata, path_salvato))
+                            INSERT INTO contratti (cliente, titolo, oggetto, data_inizio, data_scadenza, importo, soggetto_istat, ramo, sottocategoria, file_path, note)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ''', (cliente.strip(), titolo.strip(), oggetto.strip(), str(data_inizio), str(data_scadenza), importo, istat_val, ramo_selezionato, sottocategoria_selezionata, path_salvato, note.strip()))
                         conn.commit()
                         conn.close()
                         
@@ -144,7 +151,7 @@ else:
                     except Exception as e:
                         st.error(f"❌ Errore durante il salvataggio: {e}")
                 else:
-                    st.error("⚠️ Compila i campi obbligatori: 'Nome Cliente' e 'Titolo Contratto'.")
+                    st.error("⚠️ Compila i campi obbligatori: 'Nome Cliente', 'Titolo Contratto' e 'Oggetto del Contratto'.")
 
     # --- ARCHIVIO DIVISO PER RAMI E SOTTOCATEGORIE ---
     with col_right:
@@ -160,7 +167,7 @@ else:
                 return
             
             for r in rows:
-                c_id, c_cliente, c_titolo, c_inizio, c_scadenza, c_importo, c_istat, c_ramo, c_subcat, c_file = r
+                c_id, c_cliente, c_titolo, c_oggetto, c_inizio, c_scadenza, c_importo, c_istat, c_ramo, c_subcat, c_file, c_note = r
                 
                 header_text = f"📌 **[{c_ramo}]** {c_cliente} - {c_titolo} (Scadenza: {c_scadenza})"
                 if c_subcat and c_ramo == "Ufficio Tecnico":
@@ -168,12 +175,18 @@ else:
                 
                 with st.expander(header_text):
                     st.write(f"**Cliente/Fornitore:** {c_cliente}")
+                    st.write(f"**Titolo:** {c_titolo}")
                     st.write(f"**Ramo:** {c_ramo}")
                     if c_subcat and c_ramo == "Ufficio Tecnico":
                         st.write(f"**Sottocategoria:** {c_subcat}")
+                    
+                    st.write(f"**Oggetto del Contratto:** {c_oggetto if c_oggetto else 'Non specificato'}")
                     st.write(f"**Importo:** € {c_importo:,.2f}")
                     st.write(f"**Validità:** dal {c_inizio} al {c_scadenza}")
                     st.write(f"**Soggetto a ISTAT:** {c_istat if c_istat else 'No'}")
+                    
+                    if c_note:
+                        st.info(f"📝 **Note:** {c_note}")
                     
                     if c_file and os.path.exists(c_file):
                         with open(c_file, "rb") as f:
@@ -230,9 +243,11 @@ else:
         conn = sqlite3.connect("database.sqlite")
         cursor = conn.cursor()
 
+        SQL_SELECT = "SELECT id, cliente, titolo, oggetto, data_inizio, data_scadenza, importo, soggetto_istat, ramo, sottocategoria, file_path, note FROM contratti"
+
         # Tab 1: Tutti i contratti attivi
         with tabs[0]:
-            cursor.execute("SELECT id, cliente, titolo, data_inizio, data_scadenza, importo, soggetto_istat, ramo, sottocategoria, file_path FROM contratti WHERE ramo != 'Non più in vigore' ORDER BY data_scadenza ASC")
+            cursor.execute(f"{SQL_SELECT} WHERE ramo != 'Non più in vigore' ORDER BY data_scadenza ASC")
             mostra_contratti(cursor.fetchall(), key_prefix="all")
 
         # Tab 2: Ufficio Tecnico con Sotto-Tab per Sottocategorie
@@ -240,13 +255,13 @@ else:
             sub_tabs = st.tabs(["📂 Tutti Ufficio Tecnico"] + [f"🏷️ {s}" for s in SOTTOCATEGORIE_UFFICIO_TECNICO])
             
             with sub_tabs[0]:
-                cursor.execute("SELECT id, cliente, titolo, data_inizio, data_scadenza, importo, soggetto_istat, ramo, sottocategoria, file_path FROM contratti WHERE ramo = 'Ufficio Tecnico' ORDER BY data_scadenza ASC")
+                cursor.execute(f"{SQL_SELECT} WHERE ramo = 'Ufficio Tecnico' ORDER BY data_scadenza ASC")
                 mostra_contratti(cursor.fetchall(), key_prefix="ut_all")
             
             for j, sub_cat in enumerate(SOTTOCATEGORIE_UFFICIO_TECNICO):
                 with sub_tabs[j + 1]:
                     cursor.execute(
-                        "SELECT id, cliente, titolo, data_inizio, data_scadenza, importo, soggetto_istat, ramo, sottocategoria, file_path FROM contratti WHERE ramo = 'Ufficio Tecnico' AND sottocategoria = ? ORDER BY data_scadenza ASC",
+                        f"{SQL_SELECT} WHERE ramo = 'Ufficio Tecnico' AND sottocategoria = ? ORDER BY data_scadenza ASC",
                         (sub_cat,)
                     )
                     mostra_contratti(cursor.fetchall(), key_prefix=f"ut_sub_{j}")
@@ -255,7 +270,7 @@ else:
         for i, ramo_nome in enumerate(RAMI_AZIENDALI[1:]):
             with tabs[i + 2]:
                 cursor.execute(
-                    "SELECT id, cliente, titolo, data_inizio, data_scadenza, importo, soggetto_istat, ramo, sottocategoria, file_path FROM contratti WHERE ramo = ? ORDER BY data_scadenza ASC",
+                    f"{SQL_SELECT} WHERE ramo = ? ORDER BY data_scadenza ASC",
                     (ramo_nome,)
                 )
                 mostra_contratti(cursor.fetchall(), key_prefix=f"branch_{i}")
@@ -263,14 +278,14 @@ else:
         # Tab 8: Non più in vigore
         with tabs[-1]:
             cursor.execute(
-                "SELECT id, cliente, titolo, data_inizio, data_scadenza, importo, soggetto_istat, ramo, sottocategoria, file_path FROM contratti WHERE ramo = 'Non più in vigore' ORDER BY data_scadenza DESC"
+                f"{SQL_SELECT} WHERE ramo = 'Non più in vigore' ORDER BY data_scadenza DESC"
             )
             archived_rows = cursor.fetchall()
             
             if not archived_rows:
                 st.info("Nessun contratto presente nella sezione 'Non più in vigore'.")
             else:
-                anni_presenti = sorted(list(set([r[4][:4] for r in archived_rows if r[4] and len(r[4]) >= 4])), reverse=True)
+                anni_presenti = sorted(list(set([r[5][:4] for r in archived_rows if r[5] and len(r[5]) >= 4])), reverse=True)
                 sub_tabs_anni = st.tabs(["📂 Tutti Archiviati"] + [f"📅 Anno {anno}" for anno in anni_presenti])
                 
                 with sub_tabs_anni[0]:
@@ -278,7 +293,7 @@ else:
                 
                 for idx, anno in enumerate(anni_presenti):
                     with sub_tabs_anni[idx + 1]:
-                        rows_anno = [r for r in archived_rows if r[4].startswith(anno)]
+                        rows_anno = [r for r in archived_rows if r[5].startswith(anno)]
                         mostra_contratti(rows_anno, key_prefix=f"arch_anno_{anno}")
                 
         conn.close()
