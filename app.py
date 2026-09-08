@@ -27,6 +27,11 @@ SOTTOCATEGORIE_UFFICIO_TECNICO = [
     "Contratti una tantum"
 ]
 
+TIPI_CONTRATTO = [
+    "Attivo (Entrata / Cliente)",
+    "Passivo (Uscita / Fornitore)"
+]
+
 # Inizializzazione Database SQLite
 def init_db():
     conn = sqlite3.connect("database.sqlite")
@@ -37,6 +42,7 @@ def init_db():
             cliente TEXT NOT NULL,
             titolo TEXT NOT NULL,
             oggetto TEXT DEFAULT '',
+            tipo_contratto TEXT DEFAULT 'Passivo (Uscita / Fornitore)',
             data_inizio TEXT NOT NULL,
             data_scadenza TEXT NOT NULL,
             importo REAL,
@@ -53,6 +59,7 @@ def init_db():
                           ("ramo", "TEXT DEFAULT 'Ufficio Tecnico'"), 
                           ("sottocategoria", "TEXT DEFAULT ''"),
                           ("oggetto", "TEXT DEFAULT ''"),
+                          ("tipo_contratto", "TEXT DEFAULT 'Passivo (Uscita / Fornitore)'"),
                           ("note", "TEXT DEFAULT ''")]:
         try:
             cursor.execute(f"ALTER TABLE contratti ADD COLUMN {col} {col_type}")
@@ -112,6 +119,7 @@ else:
             sottocategoria_selezionata = st.selectbox("Sottocategoria Ufficio Tecnico", SOTTOCATEGORIE_UFFICIO_TECNICO)
 
         with st.form("form_contratto", clear_on_submit=True):
+            tipo_contratto_sel = st.selectbox("Tipo Contratto *", TIPI_CONTRATTO)
             cliente = st.text_input("Nome Cliente / Fornitore *")
             titolo = st.text_input("Titolo Contratto *")
             oggetto = st.text_area("Oggetto del Contratto *", placeholder="Descrizione dell'oggetto del contratto...")
@@ -140,9 +148,9 @@ else:
                         conn = sqlite3.connect("database.sqlite")
                         cursor = conn.cursor()
                         cursor.execute('''
-                            INSERT INTO contratti (cliente, titolo, oggetto, data_inizio, data_scadenza, importo, soggetto_istat, ramo, sottocategoria, file_path, note)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        ''', (cliente.strip(), titolo.strip(), oggetto.strip(), str(data_inizio), str(data_scadenza), importo, istat_val, ramo_selezionato, sottocategoria_selezionata, path_salvato, note.strip()))
+                            INSERT INTO contratti (cliente, titolo, oggetto, tipo_contratto, data_inizio, data_scadenza, importo, soggetto_istat, ramo, sottocategoria, file_path, note)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ''', (cliente.strip(), titolo.strip(), oggetto.strip(), tipo_contratto_sel, str(data_inizio), str(data_scadenza), importo, istat_val, ramo_selezionato, sottocategoria_selezionata, path_salvato, note.strip()))
                         conn.commit()
                         conn.close()
                         
@@ -164,18 +172,31 @@ else:
         conn = sqlite3.connect("database.sqlite")
         cursor = conn.cursor()
 
-        SQL_SELECT = "SELECT id, cliente, titolo, oggetto, data_inizio, data_scadenza, importo, soggetto_istat, ramo, sottocategoria, file_path, note FROM contratti"
+        SQL_SELECT = "SELECT id, cliente, titolo, oggetto, tipo_contratto, data_inizio, data_scadenza, importo, soggetto_istat, ramo, sottocategoria, file_path, note FROM contratti"
 
-        # Recupera contratti attivi per calcolare le scadenze
+        # Recupera contratti attivi
         cursor.execute(f"{SQL_SELECT} WHERE ramo != 'Non più in vigore' ORDER BY data_scadenza ASC")
         tutti_attivi_rows = cursor.fetchall()
 
-        # I contratti con rinnovo tacito NON vengono considerati scaduti
-        rows_scaduti = [r for r in tutti_attivi_rows if r[5] and r[5] < oggi_str and r[9] != "Contratti con il rinnovo tacito"]
-        rows_in_scadenza = [r for r in tutti_attivi_rows if r[5] and oggi_str <= r[5] <= limite_60_giorni_str and r[9] != "Contratti con il rinnovo tacito"]
-        rows_rinnovo_tacito = [r for r in tutti_attivi_rows if r[9] == "Contratti con il rinnovo tacito" and r[5] and r[5] < oggi_str]
+        # Calcolo scadenze
+        rows_scaduti = [r for r in tutti_attivi_rows if r[6] and r[6] < oggi_str and r[10] != "Contratti con il rinnovo tacito"]
+        rows_in_scadenza = [r for r in tutti_attivi_rows if r[6] and oggi_str <= r[6] <= limite_60_giorni_str and r[10] != "Contratti con il rinnovo tacito"]
+        rows_rinnovo_tacito = [r for r in tutti_attivi_rows if r[10] == "Contratti con il rinnovo tacito" and r[6] and r[6] < oggi_str]
 
-        # Banner di notifica visivo in cima
+        # Calcolo totali economici attivi vs passivi
+        tot_attivi = sum(r[7] for r in tutti_attivi_rows if r[4] and "Attivo" in r[4])
+        tot_passivi = sum(r[7] for r in tutti_attivi_rows if r[4] and "Passivo" in r[4])
+        saldo = tot_attivi - tot_passivi
+
+        # Indicatori di sintesi finanziaria
+        col_m1, col_m2, col_m3 = st.columns(3)
+        col_m1.metric("🟢 Totale Entrate (Attivi)", f"€ {tot_attivi:,.2f}")
+        col_m2.metric("🔴 Totale Uscite (Passivi)", f"€ {tot_passivi:,.2f}")
+        col_m3.metric("📊 Saldo Netto", f"€ {saldo:,.2f}")
+
+        st.markdown("---")
+
+        # Banner di notifica scadenze
         if rows_scaduti or rows_in_scadenza:
             msg = []
             if rows_scaduti:
@@ -194,10 +215,14 @@ else:
                 return
             
             for r in rows:
-                c_id, c_cliente, c_titolo, c_oggetto, c_inizio, c_scadenza, c_importo, c_istat, c_ramo, c_subcat, c_file, c_note = r
+                c_id, c_cliente, c_titolo, c_oggetto, c_tipo, c_inizio, c_scadenza, c_importo, c_istat, c_ramo, c_subcat, c_file, c_note = r
                 
                 is_tacito = (c_subcat == "Contratti con il rinnovo tacito")
                 is_scaduto = (c_scadenza < oggi_str if c_scadenza else False)
+
+                # Gestione etichetta tipo contratto
+                is_attivo = ("Attivo" in c_tipo) if c_tipo else False
+                badge_tipo = "🟢 Attivo" if is_attivo else "🔴 Passivo"
 
                 # Gestione etichetta intestazione
                 if is_tacito and is_scaduto:
@@ -207,29 +232,33 @@ else:
                 else:
                     scad_label = f"Scadenza: {c_scadenza}"
 
-                header_text = f"📌 **[{c_ramo}]** {c_cliente} - {c_titolo} ({scad_label})"
+                header_text = f"📌 [{badge_tipo}] **[{c_ramo}]** {c_cliente} - {c_titolo} ({scad_label})"
                 if c_subcat and c_ramo == "Ufficio Tecnico":
-                    header_text = f"📌 **[{c_ramo} / {c_subcat}]** {c_cliente} - {c_titolo} ({scad_label})"
+                    header_text = f"📌 [{badge_tipo}] **[{c_ramo} / {c_subcat}]** {c_cliente} - {c_titolo} ({scad_label})"
                 
                 with st.expander(header_text):
-                    st.write(f"**Cliente/Fornitore:** {c_cliente}")
-                    st.write(f"**Titolo:** {c_titolo}")
-                    st.write(f"**Ramo:** {c_ramo}")
-                    if c_subcat and c_ramo == "Ufficio Tecnico":
-                        st.write(f"**Sottocategoria:** {c_subcat}")
+                    col_info1, col_info2 = st.columns(2)
+                    with col_info1:
+                        st.write(f"**Tipo Contratto:** {badge_tipo} ({'Entrata / Cliente' if is_attivo else 'Uscita / Fornitore'})")
+                        st.write(f"**Cliente/Fornitore:** {c_cliente}")
+                        st.write(f"**Titolo:** {c_titolo}")
+                        st.write(f"**Ramo:** {c_ramo}")
+                        if c_subcat and c_ramo == "Ufficio Tecnico":
+                            st.write(f"**Sottocategoria:** {c_subcat}")
                     
-                    st.write(f"**Oggetto del Contratto:** {c_oggetto if c_oggetto else 'Non specificato'}")
-                    st.write(f"**Importo:** € {c_importo:,.2f}")
-                    
-                    if is_tacito:
-                        if is_scaduto:
-                            st.success(f"🔄 **Rinnovo Tacito:** Il contratto si è rinnovato tacitamente dopo il {c_scadenza} ed è tuttora attivo (in vigore fino a disdetta).")
+                    with col_info2:
+                        st.write(f"**Importo:** € {c_importo:,.2f}")
+                        if is_tacito:
+                            if is_scaduto:
+                                st.success(f"🔄 **Rinnovo Tacito:** Il contratto si è rinnovato tacitamente dopo il {c_scadenza} ed è tuttora attivo.")
+                            else:
+                                st.info(f"🔄 **Rinnovo Tacito:** Data di scadenza/rinnovo iniziale: {c_scadenza}.")
                         else:
-                            st.info(f"🔄 **Rinnovo Tacito:** Data di scadenza/rinnovo iniziale: {c_scadenza}. Si rinnoverà automaticamente salvo disdetta.")
-                    else:
-                        st.write(f"**Validità:** dal {c_inizio} al {c_scadenza}")
-                        
-                    st.write(f"**Soggetto a ISTAT:** {c_istat if c_istat else 'No'}")
+                            st.write(f"**Validità:** dal {c_inizio} al {c_scadenza}")
+                            
+                        st.write(f"**Soggetto a ISTAT:** {c_istat if c_istat else 'No'}")
+
+                    st.write(f"**Oggetto del Contratto:** {c_oggetto if c_oggetto else 'Non specificato'}")
                     
                     if c_note:
                         st.info(f"📝 **Note:** {c_note}")
@@ -288,7 +317,13 @@ else:
 
         # Tab 1: Tutti i contratti attivi
         with tabs[0]:
-            mostra_contratti(tutti_attivi_rows, key_prefix="all")
+            sub_tabs_tipo = st.tabs(["📂 Tutti", "🟢 Solamente Attivi (Entrate)", "🔴 Solamente Passivi (Uscite)"])
+            with sub_tabs_tipo[0]:
+                mostra_contratti(tutti_attivi_rows, key_prefix="all")
+            with sub_tabs_tipo[1]:
+                mostra_contratti([r for r in tutti_attivi_rows if "Attivo" in r[4]], key_prefix="all_attivi")
+            with sub_tabs_tipo[2]:
+                mostra_contratti([r for r in tutti_attivi_rows if "Passivo" in r[4]], key_prefix="all_passivi")
 
         # Tab 2: Sezione Scadenze
         with tabs[1]:
@@ -341,7 +376,7 @@ else:
             if not archived_rows:
                 st.info("Nessun contratto presente nella sezione 'Non più in vigore'.")
             else:
-                anni_presenti = sorted(list(set([r[5][:4] for r in archived_rows if r[5] and len(r[5]) >= 4])), reverse=True)
+                anni_presenti = sorted(list(set([r[6][:4] for r in archived_rows if r[6] and len(r[6]) >= 4])), reverse=True)
                 sub_tabs_anni = st.tabs(["📂 Tutti Archiviati"] + [f"📅 Anno {anno}" for anno in anni_presenti])
                 
                 with sub_tabs_anni[0]:
@@ -349,7 +384,7 @@ else:
                 
                 for idx, anno in enumerate(anni_presenti):
                     with sub_tabs_anni[idx + 1]:
-                        rows_anno = [r for r in archived_rows if r[5].startswith(anno)]
+                        rows_anno = [r for r in archived_rows if r[6].startswith(anno)]
                         mostra_contratti(rows_anno, key_prefix=f"arch_anno_{anno}")
                 
         conn.close()
