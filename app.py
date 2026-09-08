@@ -120,28 +120,31 @@ else:
             salva = st.form_submit_button("Salva Contratto")
             
             if salva:
-                if cliente and titolo:
-                    path_salvato = None
-                    if file_allegato:
-                        path_salvato = os.path.join(UPLOAD_DIR, file_allegato.name)
-                        with open(path_salvato, "wb") as f:
-                            f.write(file_allegato.getbuffer())
-                    
-                    istat_val = "Sì" if soggetto_istat else "No"
-                    
-                    conn = sqlite3.connect("database.sqlite")
-                    cursor = conn.cursor()
-                    cursor.execute('''
-                        INSERT INTO contratti (cliente, titolo, data_inizio, data_scadenza, importo, soggetto_istat, ramo, sottocategoria, file_path)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ''', (cliente, titolo, str(data_inizio), str(data_scadenza), importo, istat_val, ramo_selezionato, sottocategoria_selezionata, path_salvato))
-                    conn.commit()
-                    conn.close()
-                    
-                    st.success(f"Contratto salvato con successo!")
-                    st.rerun()
+                if cliente.strip() and titolo.strip():
+                    try:
+                        path_salvato = None
+                        if file_allegato is not None:
+                            path_salvato = os.path.join(UPLOAD_DIR, file_allegato.name)
+                            with open(path_salvato, "wb") as f:
+                                f.write(file_allegato.getbuffer())
+                        
+                        istat_val = "Sì" if soggetto_istat else "No"
+                        
+                        conn = sqlite3.connect("database.sqlite")
+                        cursor = conn.cursor()
+                        cursor.execute('''
+                            INSERT INTO contratti (cliente, titolo, data_inizio, data_scadenza, importo, soggetto_istat, ramo, sottocategoria, file_path)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ''', (cliente.strip(), titolo.strip(), str(data_inizio), str(data_scadenza), importo, istat_val, ramo_selezionato, sottocategoria_selezionata, path_salvato))
+                        conn.commit()
+                        conn.close()
+                        
+                        st.success("✅ Contratto salvato con successo!")
+                        st.toast("✅ Contratto aggiunto all'archivio!", icon="🎉")
+                    except Exception as e:
+                        st.error(f"❌ Errore durante il salvataggio: {e}")
                 else:
-                    st.warning("Compila tutti i campi obbligatori.")
+                    st.error("⚠️ Compila i campi obbligatori: 'Nome Cliente' e 'Titolo Contratto'.")
 
     # --- ARCHIVIO DIVISO PER RAMI E SOTTOCATEGORIE ---
     with col_right:
@@ -193,7 +196,7 @@ else:
                                 cursor.execute("UPDATE contratti SET ramo = 'Non più in vigore' WHERE id = ?", (c_id,))
                                 conn.commit()
                                 conn.close()
-                                st.success("Contratto spostato in 'Non più in vigore'!")
+                                st.toast("Contratto spostato in 'Non più in vigore'!")
                                 st.rerun()
                         else:
                             ramo_ripristino = st.selectbox("Ripristina in:", RAMI_AZIENDALI, key=f"{key_prefix}_sel_rest_{c_id}")
@@ -203,7 +206,7 @@ else:
                                 cursor.execute("UPDATE contratti SET ramo = ? WHERE id = ?", (ramo_ripristino, c_id))
                                 conn.commit()
                                 conn.close()
-                                st.success(f"Contratto ripristinato in '{ramo_ripristino}'!")
+                                st.toast(f"Contratto ripristinato in '{ramo_ripristino}'!")
                                 st.rerun()
                                 
                     # Pulsante Elimina
@@ -221,7 +224,7 @@ else:
                                 except Exception:
                                     pass
                                     
-                            st.success("Contratto eliminato con successo!")
+                            st.toast("Contratto eliminato con successo!")
                             st.rerun()
 
         conn = sqlite3.connect("database.sqlite")
