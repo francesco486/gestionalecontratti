@@ -315,15 +315,19 @@ else:
                             st.toast("Contratto eliminato con successo!")
                             st.rerun()
 
+        def filtro_tipo_tabs(rows, prefix):
+            """Helper per creare rapidamente le sotto-schede Tutti / Attivi / Passivi"""
+            sub_tabs = st.tabs(["📂 Tutti", "🟢 Solamente Attivi", "🔴 Solamente Passivi"])
+            with sub_tabs[0]:
+                mostra_contratti(rows, key_prefix=f"{prefix}_all")
+            with sub_tabs[1]:
+                mostra_contratti([r for r in rows if "Attivo" in r[4]], key_prefix=f"{prefix}_att")
+            with sub_tabs[2]:
+                mostra_contratti([r for r in rows if "Passivo" in r[4]], key_prefix=f"{prefix}_pass")
+
         # Tab 1: Tutti i contratti attivi
         with tabs[0]:
-            sub_tabs_tipo = st.tabs(["📂 Tutti", "🟢 Solamente Attivi (Entrate)", "🔴 Solamente Passivi (Uscite)"])
-            with sub_tabs_tipo[0]:
-                mostra_contratti(tutti_attivi_rows, key_prefix="all")
-            with sub_tabs_tipo[1]:
-                mostra_contratti([r for r in tutti_attivi_rows if "Attivo" in r[4]], key_prefix="all_attivi")
-            with sub_tabs_tipo[2]:
-                mostra_contratti([r for r in tutti_attivi_rows if "Passivo" in r[4]], key_prefix="all_passivi")
+            filtro_tipo_tabs(tutti_attivi_rows, "tab_all")
 
         # Tab 2: Sezione Scadenze
         with tabs[1]:
@@ -331,15 +335,15 @@ else:
             
             with sub_tabs_scadenze[0]:
                 st.caption("Contratti attivi (senza rinnovo tacito) con scadenza prevista nei prossimi 60 giorni.")
-                mostra_contratti(rows_in_scadenza, key_prefix="scad_exp")
+                filtro_tipo_tabs(rows_in_scadenza, "scad_exp")
                 
             with sub_tabs_scadenze[1]:
                 st.caption("Contratti attivi (senza rinnovo tacito) la cui data di scadenza è già trascorsa.")
-                mostra_contratti(rows_scaduti, key_prefix="scad_over")
+                filtro_tipo_tabs(rows_scaduti, "scad_over")
 
             with sub_tabs_scadenze[2]:
                 st.caption("Contratti con rinnovo tacito che hanno superato il termine iniziale e sono tuttora attivi.")
-                mostra_contratti(rows_rinnovo_tacito, key_prefix="scad_tacito")
+                filtro_tipo_tabs(rows_rinnovo_tacito, "scad_tacito")
 
         # Tab 3: Ufficio Tecnico con Sotto-Tab per Sottocategorie
         with tabs[2]:
@@ -347,7 +351,7 @@ else:
             
             with sub_tabs[0]:
                 cursor.execute(f"{SQL_SELECT} WHERE ramo = 'Ufficio Tecnico' ORDER BY data_scadenza ASC")
-                mostra_contratti(cursor.fetchall(), key_prefix="ut_all")
+                filtro_tipo_tabs(cursor.fetchall(), "ut_all")
             
             for j, sub_cat in enumerate(SOTTOCATEGORIE_UFFICIO_TECNICO):
                 with sub_tabs[j + 1]:
@@ -355,7 +359,7 @@ else:
                         f"{SQL_SELECT} WHERE ramo = 'Ufficio Tecnico' AND sottocategoria = ? ORDER BY data_scadenza ASC",
                         (sub_cat,)
                     )
-                    mostra_contratti(cursor.fetchall(), key_prefix=f"ut_sub_{j}")
+                    filtro_tipo_tabs(cursor.fetchall(), f"ut_sub_{j}")
 
         # Tab 4-8: Gli altri rami aziendali attivi
         for i, ramo_nome in enumerate(RAMI_AZIENDALI[1:]):
@@ -364,7 +368,7 @@ else:
                     f"{SQL_SELECT} WHERE ramo = ? ORDER BY data_scadenza ASC",
                     (ramo_nome,)
                 )
-                mostra_contratti(cursor.fetchall(), key_prefix=f"branch_{i}")
+                filtro_tipo_tabs(cursor.fetchall(), f"branch_{i}")
 
         # Tab 9: Non più in vigore
         with tabs[-1]:
@@ -380,11 +384,11 @@ else:
                 sub_tabs_anni = st.tabs(["📂 Tutti Archiviati"] + [f"📅 Anno {anno}" for anno in anni_presenti])
                 
                 with sub_tabs_anni[0]:
-                    mostra_contratti(archived_rows, key_prefix="arch_all")
+                    filtro_tipo_tabs(archived_rows, "arch_all")
                 
                 for idx, anno in enumerate(anni_presenti):
                     with sub_tabs_anni[idx + 1]:
                         rows_anno = [r for r in archived_rows if r[6].startswith(anno)]
-                        mostra_contratti(rows_anno, key_prefix=f"arch_anno_{anno}")
+                        filtro_tipo_tabs(rows_anno, f"arch_anno_{anno}")
                 
         conn.close()
