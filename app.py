@@ -23,7 +23,8 @@ RAMI_AZIENDALI = [
 SOTTOCATEGORIE_UFFICIO_TECNICO = [
     "Selezioni",
     "Contratti senza rinnovo tacito",
-    "Contratti con il rinnovo tacito"
+    "Contratti con il rinnovo tacito",
+    "Contratti una tantum"
 ]
 
 # Inizializzazione Database SQLite
