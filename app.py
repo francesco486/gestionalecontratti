@@ -12,15 +12,15 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 # Elenco dei Rami Aziendali e Sottocategorie
 RAMI_AZIENDALI = [
-    "Manutenzione",
-    "Terminalistici",
+    "Ufficio Tecnico",
+    "Ferroviario",
     "Amministrazione",
     "ICT",
     "Convenzioni",
     "Consulenza QS"
 ]
 
-SOTTOCATEGORIE_MANUTENZIONE = [
+SOTTOCATEGORIE_UFFICIO_TECNICO = [
     "Selezioni",
     "Contratti senza rinnovo tacito",
     "Contratti con il rinnovo tacito"
@@ -39,7 +39,7 @@ def init_db():
             data_scadenza TEXT NOT NULL,
             importo REAL,
             soggetto_istat TEXT DEFAULT 'No',
-            ramo TEXT DEFAULT 'Manutenzione',
+            ramo TEXT DEFAULT 'Ufficio Tecnico',
             sottocategoria TEXT DEFAULT '',
             file_path TEXT
         )
@@ -47,7 +47,7 @@ def init_db():
     
     # Migrazioni automatiche per database esistenti
     for col, col_type in [("soggetto_istat", "TEXT DEFAULT 'No'"), 
-                          ("ramo", "TEXT DEFAULT 'Manutenzione'"), 
+                          ("ramo", "TEXT DEFAULT 'Ufficio Tecnico'"), 
                           ("sottocategoria", "TEXT DEFAULT ''")]:
         try:
             cursor.execute(f"ALTER TABLE contratti ADD COLUMN {col} {col_type}")
@@ -101,10 +101,10 @@ else:
         # Selezione Ramo dinamica
         ramo_selezionato = st.selectbox("Ramo Aziendale", RAMI_AZIENDALI)
         
-        # Mostra la sottocategoria solo se il ramo è Manutenzione
+        # Mostra la sottocategoria solo se il ramo è Ufficio Tecnico
         sottocategoria_selezionata = ""
-        if ramo_selezionato == "Manutenzione":
-            sottocategoria_selezionata = st.selectbox("Sottocategoria Manutenzione", SOTTOCATEGORIE_MANUTENZIONE)
+        if ramo_selezionato == "Ufficio Tecnico":
+            sottocategoria_selezionata = st.selectbox("Sottocategoria Ufficio Tecnico", SOTTOCATEGORIE_UFFICIO_TECNICO)
 
         with st.form("form_contratto", clear_on_submit=True):
             cliente = st.text_input("Nome Cliente / Fornitore")
@@ -188,20 +188,20 @@ else:
             cursor.execute("SELECT id, cliente, titolo, data_inizio, data_scadenza, importo, soggetto_istat, ramo, sottocategoria, file_path FROM contratti ORDER BY data_scadenza ASC")
             mostra_contratti(cursor.fetchall())
 
-        # Tab 2: Manutenzione con Sotto-Tab per Sottocategorie
+        # Tab 2: Ufficio Tecnico con Sotto-Tab per Sottocategorie
         with tabs[1]:
-            sub_tabs = st.tabs(["📂 Tutti Manutenzione"] + [f"🏷️ {s}" for s in SOTTOCATEGORIE_MANUTENZIONE])
+            sub_tabs = st.tabs(["📂 Tutti Ufficio Tecnico"] + [f"🏷️ {s}" for s in SOTTOCATEGORIE_UFFICIO_TECNICO])
             
-            # Sotto-Tab "Tutti Manutenzione"
+            # Sotto-Tab "Tutti Ufficio Tecnico"
             with sub_tabs[0]:
-                cursor.execute("SELECT id, cliente, titolo, data_inizio, data_scadenza, importo, soggetto_istat, ramo, sottocategoria, file_path FROM contratti WHERE ramo = 'Manutenzione' ORDER BY data_scadenza ASC")
+                cursor.execute("SELECT id, cliente, titolo, data_inizio, data_scadenza, importo, soggetto_istat, ramo, sottocategoria, file_path FROM contratti WHERE ramo = 'Ufficio Tecnico' ORDER BY data_scadenza ASC")
                 mostra_contratti(cursor.fetchall())
             
             # Sotto-Tab per singola sottocategoria
-            for j, sub_cat in enumerate(SOTTOCATEGORIE_MANUTENZIONE):
+            for j, sub_cat in enumerate(SOTTOCATEGORIE_UFFICIO_TECNICO):
                 with sub_tabs[j + 1]:
                     cursor.execute(
-                        "SELECT id, cliente, titolo, data_inizio, data_scadenza, importo, soggetto_istat, ramo, sottocategoria, file_path FROM contratti WHERE ramo = 'Manutenzione' AND sottocategoria = ? ORDER BY data_scadenza ASC",
+                        "SELECT id, cliente, titolo, data_inizio, data_scadenza, importo, soggetto_istat, ramo, sottocategoria, file_path FROM contratti WHERE ramo = 'Ufficio Tecnico' AND sottocategoria = ? ORDER BY data_scadenza ASC",
                         (sub_cat,)
                     )
                     mostra_contratti(cursor.fetchall())
