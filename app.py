@@ -22,9 +22,17 @@ def init_db():
             data_inizio TEXT NOT NULL,
             data_scadenza TEXT NOT NULL,
             importo REAL,
+            soggetto_istat TEXT DEFAULT 'No',
             file_path TEXT
         )
     ''')
+    
+    # Aggiornamento automatico per database esistenti senza la colonna ISTAT
+    try:
+        cursor.execute("ALTER TABLE contratti ADD COLUMN soggetto_istat TEXT DEFAULT 'No'")
+    except sqlite3.OperationalError:
+        pass  # La colonna esiste già
+
     conn.commit()
     conn.close()
 
@@ -75,6 +83,10 @@ else:
             data_inizio = st.date_input("Data Inizio", datetime.now())
             data_scadenza = st.date_input("Data Scadenza", datetime.now())
             importo = st.number_input("Importo (€)", min_value=0.0, step=100.0)
+            
+            # Campo Selezione ISTAT
+            soggetto_istat = st.checkbox("Soggetto ad adeguamento ISTAT")
+            
             file_allegato = st.file_uploader("Allegato (PDF/DOC)", type=["pdf", "doc", "docx"])
             
             salva = st.form_submit_button("Salva Contratto")
@@ -87,13 +99,15 @@ else:
                         with open(path_salvato, "wb") as f:
                             f.write(file_allegato.getbuffer())
                     
+                    istat_val = "Sì" if soggetto_istat else "No"
+                    
                     # Salvataggio nel DB
                     conn = sqlite3.connect("database.sqlite")
                     cursor = conn.cursor()
                     cursor.execute('''
-                        INSERT INTO contratti (cliente, titolo, data_inizio, data_scadenza, importo, file_path)
-                        VALUES (?, ?, ?, ?, ?, ?)
-                    ''', (cliente, titolo, str(data_inizio), str(data_scadenza), importo, path_salvato))
+                        INSERT INTO contratti (cliente, titolo, data_inizio, data_scadenza, importo, soggetto_istat, file_path)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                    ''', (cliente, titolo, str(data_inizio), str(data_scadenza), importo, istat_val, path_salvato))
                     conn.commit()
                     conn.close()
                     
@@ -108,7 +122,7 @@ else:
         
         conn = sqlite3.connect("database.sqlite")
         cursor = conn.cursor()
-        cursor.execute("SELECT id, cliente, titolo, data_inizio, data_scadenza, importo, file_path FROM contratti ORDER BY data_scadenza ASC")
+        cursor.execute("SELECT id, cliente, titolo, data_inizio, data_scadenza, importo, soggetto_istat, file_path FROM contratti ORDER BY data_scadenza ASC")
         rows = cursor.fetchall()
         conn.close()
 
@@ -116,11 +130,12 @@ else:
             st.info("Nessun contratto presente nel database.")
         else:
             for r in rows:
-                c_id, c_cliente, c_titolo, c_inizio, c_scadenza, c_importo, c_file = r
+                c_id, c_cliente, c_titolo, c_inizio, c_scadenza, c_importo, c_istat, c_file = r
                 
                 with st.expander(f"📌 **{c_cliente}** - {c_titolo} (Scadenza: {c_scadenza})"):
                     st.write(f"**Importo:** € {c_importo:,.2f}")
                     st.write(f"**Data Inizio:** {c_inizio}")
+                    st.write(f"**Soggetto a ISTAT:** {c_istat if c_istat else 'No'}")
                     
                     if c_file and os.path.exists(c_file):
                         with open(c_file, "rb") as f:
