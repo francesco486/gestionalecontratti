@@ -147,11 +147,12 @@ else:
     with col_right:
         st.subheader("📋 Archivio Contratti")
         
-        nomi_tabs = ["📂 Tutti"] + [f"🏢 {r}" for r in RAMI_AZIENDALI]
+        # Schede dell'archivio (inclusa la scheda "Non più in vigore")
+        nomi_tabs = ["📂 Tutti Attivi"] + [f"🏢 {r}" for r in RAMI_AZIENDALI] + ["📦 Non più in vigore"]
         tabs = st.tabs(nomi_tabs)
         
         def mostra_contratti(rows):
-            """Funzione per renderizzare la lista dei contratti"""
+            """Funzione per renderizzare la lista dei contratti con azioni (Elimina / Sposta / Ripristina)"""
             if not rows:
                 st.info("Nessun contratto presente in questa sezione.")
                 return
@@ -160,13 +161,13 @@ else:
                 c_id, c_cliente, c_titolo, c_inizio, c_scadenza, c_importo, c_istat, c_ramo, c_subcat, c_file = r
                 
                 header_text = f"📌 **[{c_ramo}]** {c_cliente} - {c_titolo} (Scadenza: {c_scadenza})"
-                if c_subcat:
+                if c_subcat and c_ramo == "Ufficio Tecnico":
                     header_text = f"📌 **[{c_ramo} / {c_subcat}]** {c_cliente} - {c_titolo} (Scadenza: {c_scadenza})"
                 
                 with st.expander(header_text):
                     st.write(f"**Cliente/Fornitore:** {c_cliente}")
                     st.write(f"**Ramo:** {c_ramo}")
-                    if c_subcat:
+                    if c_subcat and c_ramo == "Ufficio Tecnico":
                         st.write(f"**Sottocategoria:** {c_subcat}")
                     st.write(f"**Importo:** € {c_importo:,.2f}")
                     st.write(f"**Validità:** dal {c_inizio} al {c_scadenza}")
@@ -180,25 +181,67 @@ else:
                                 file_name=os.path.basename(c_file),
                                 key=f"dl_{c_id}"
                             )
+                    
+                    st.markdown("---")
+                    col_b1, col_b2 = st.columns(2)
+                    
+                    # Pulsante Sposta / Ripristina
+                    with col_b1:
+                        if c_ramo != "Non più in vigore":
+                            if st.button("📦 Sposta in 'Non più in vigore'", key=f"arch_{c_id}"):
+                                conn = sqlite3.connect("database.sqlite")
+                                cursor = conn.cursor()
+                                cursor.execute("UPDATE contratti SET ramo = 'Non più in vigore' WHERE id = ?", (c_id,))
+                                conn.commit()
+                                conn.close()
+                                st.success("Contratto spostato in 'Non più in vigore'!")
+                                st.rerun()
+                        else:
+                            ramo_ripristino = st.selectbox("Ripristina in:", RAMI_AZIENDALI, key=f"sel_rest_{c_id}")
+                            if st.button("↩️ Ripristina Contratto", key=f"rest_{c_id}"):
+                                conn = sqlite3.connect("database.sqlite")
+                                cursor = conn.cursor()
+                                cursor.execute("UPDATE contratti SET ramo = ? WHERE id = ?", (ramo_ripristino, c_id))
+                                conn.commit()
+                                conn.close()
+                                st.success(f"Contratto ripristinato in '{ramo_ripristino}'!")
+                                st.rerun()
+                                
+                    # Pulsante Elimina
+                    with col_b2:
+                        if st.button("🗑️ Elimina Contratto", key=f"del_{c_id}"):
+                            conn = sqlite3.connect("database.sqlite")
+                            cursor = conn.cursor()
+                            cursor.execute("DELETE FROM contratti WHERE id = ?", (c_id,))
+                            conn.commit()
+                            conn.close()
+                            
+                            # Cancella il file allegato se esiste
+                            if c_file and os.path.exists(c_file):
+                                try:
+                                    os.remove(c_file)
+                                except Exception:
+                                    pass
+                                    
+                            st.success("Contratto eliminato con successo!")
+                            st.rerun()
 
         conn = sqlite3.connect("database.sqlite")
         cursor = conn.cursor()
 
-        # Tab 1: Tutti i contratti
+        # Tab 1: Tutti i contratti attivi
         with tabs[0]:
-            cursor.execute("SELECT id, cliente, titolo, data_inizio, data_scadenza, importo, soggetto_istat, ramo, sottocategoria, file_path FROM contratti ORDER BY data_scadenza ASC")
+            cursor.execute("SELECT id, cliente, titolo, data_inizio, data_scadenza, importo, soggetto_istat, ramo, sottocategoria, file_path FROM contratti WHERE ramo != 'Non più in vigore' ORDER BY data_scadenza ASC")
             mostra_contratti(cursor.fetchall())
 
         # Tab 2: Ufficio Tecnico con Sotto-Tab per Sottocategorie
         with tabs[1]:
             sub_tabs = st.tabs(["📂 Tutti Ufficio Tecnico"] + [f"🏷️ {s}" for s in SOTTOCATEGORIE_UFFICIO_TECNICO])
             
-            # Sotto-Tab "Tutti Ufficio Tecnico"
             with sub_tabs[0]:
                 cursor.execute("SELECT id, cliente, titolo, data_inizio, data_scadenza, importo, soggetto_istat, ramo, sottocategoria, file_path FROM contratti WHERE ramo = 'Ufficio Tecnico' ORDER BY data_scadenza ASC")
                 mostra_contratti(cursor.fetchall())
             
-            # Sotto-Tab per singola sottocategoria
             for j, sub_cat in enumerate(SOTTOCATEGORIE_UFFICIO_TECNICO):
                 with sub_tabs[j + 1]:
                     cursor.execute(
@@ -207,7 +250,7 @@ else:
                     )
                     mostra_contratti(cursor.fetchall())
 
-        # Tab 3-7: Gli altri rami aziendali
+        # Tab 3-7: Gli altri rami aziendali attivi
         for i, ramo_nome in enumerate(RAMI_AZIENDALI[1:]):
             with tabs[i + 2]:
                 cursor.execute(
@@ -215,5 +258,12 @@ else:
                     (ramo_nome,)
                 )
                 mostra_contratti(cursor.fetchall())
+
+        # Tab 8: Non più in vigore
+        with tabs[-1]:
+            cursor.execute(
+                "SELECT id, cliente, titolo, data_inizio, data_scadenza, importo, soggetto_istat, ramo, sottocategoria, file_path FROM contratti WHERE ramo = 'Non più in vigore' ORDER BY data_scadenza ASC"
+            )
+            mostra_contratti(cursor.fetchall())
                 
         conn.close()
