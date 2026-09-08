@@ -117,7 +117,7 @@ else:
             oggetto = st.text_area("Oggetto del Contratto *", placeholder="Descrizione dell'oggetto del contratto...")
             
             data_inizio = st.date_input("Data Inizio", datetime.now())
-            data_scadenza = st.date_input("Data Scadenza", datetime.now())
+            data_scadenza = st.date_input("Data Scadenza / Termine Iniziale", datetime.now())
             importo = st.number_input("Importo (€)", min_value=0.0, step=100.0)
             
             soggetto_istat = st.checkbox("Soggetto ad adeguamento ISTAT")
@@ -157,7 +157,6 @@ else:
     with col_right:
         st.subheader("📋 Archivio Contratti")
         
-        # Calcolo scadenze e contratti scaduti
         oggi = date.today()
         oggi_str = oggi.strftime("%Y-%m-%d")
         limite_60_giorni_str = (oggi + timedelta(days=60)).strftime("%Y-%m-%d")
@@ -171,8 +170,10 @@ else:
         cursor.execute(f"{SQL_SELECT} WHERE ramo != 'Non più in vigore' ORDER BY data_scadenza ASC")
         tutti_attivi_rows = cursor.fetchall()
 
-        rows_scaduti = [r for r in tutti_attivi_rows if r[5] and r[5] < oggi_str]
-        rows_in_scadenza = [r for r in tutti_attivi_rows if r[5] and oggi_str <= r[5] <= limite_60_giorni_str]
+        # I contratti con rinnovo tacito NON vengono considerati scaduti
+        rows_scaduti = [r for r in tutti_attivi_rows if r[5] and r[5] < oggi_str and r[9] != "Contratti con il rinnovo tacito"]
+        rows_in_scadenza = [r for r in tutti_attivi_rows if r[5] and oggi_str <= r[5] <= limite_60_giorni_str and r[9] != "Contratti con il rinnovo tacito"]
+        rows_rinnovo_tacito = [r for r in tutti_attivi_rows if r[9] == "Contratti con il rinnovo tacito" and r[5] and r[5] < oggi_str]
 
         # Banner di notifica visivo in cima
         if rows_scaduti or rows_in_scadenza:
@@ -195,9 +196,20 @@ else:
             for r in rows:
                 c_id, c_cliente, c_titolo, c_oggetto, c_inizio, c_scadenza, c_importo, c_istat, c_ramo, c_subcat, c_file, c_note = r
                 
-                header_text = f"📌 **[{c_ramo}]** {c_cliente} - {c_titolo} (Scadenza: {c_scadenza})"
+                is_tacito = (c_subcat == "Contratti con il rinnovo tacito")
+                is_scaduto = (c_scadenza < oggi_str if c_scadenza else False)
+
+                # Gestione etichetta intestazione
+                if is_tacito and is_scaduto:
+                    scad_label = "Rinnovato tacitamente"
+                elif is_tacito:
+                    scad_label = f"Prossimo rinnovo: {c_scadenza}"
+                else:
+                    scad_label = f"Scadenza: {c_scadenza}"
+
+                header_text = f"📌 **[{c_ramo}]** {c_cliente} - {c_titolo} ({scad_label})"
                 if c_subcat and c_ramo == "Ufficio Tecnico":
-                    header_text = f"📌 **[{c_ramo} / {c_subcat}]** {c_cliente} - {c_titolo} (Scadenza: {c_scadenza})"
+                    header_text = f"📌 **[{c_ramo} / {c_subcat}]** {c_cliente} - {c_titolo} ({scad_label})"
                 
                 with st.expander(header_text):
                     st.write(f"**Cliente/Fornitore:** {c_cliente}")
@@ -208,7 +220,15 @@ else:
                     
                     st.write(f"**Oggetto del Contratto:** {c_oggetto if c_oggetto else 'Non specificato'}")
                     st.write(f"**Importo:** € {c_importo:,.2f}")
-                    st.write(f"**Validità:** dal {c_inizio} al {c_scadenza}")
+                    
+                    if is_tacito:
+                        if is_scaduto:
+                            st.success(f"🔄 **Rinnovo Tacito:** Il contratto si è rinnovato tacitamente dopo il {c_scadenza} ed è tuttora attivo (in vigore fino a disdetta).")
+                        else:
+                            st.info(f"🔄 **Rinnovo Tacito:** Data di scadenza/rinnovo iniziale: {c_scadenza}. Si rinnoverà automaticamente salvo disdetta.")
+                    else:
+                        st.write(f"**Validità:** dal {c_inizio} al {c_scadenza}")
+                        
                     st.write(f"**Soggetto a ISTAT:** {c_istat if c_istat else 'No'}")
                     
                     if c_note:
@@ -270,17 +290,21 @@ else:
         with tabs[0]:
             mostra_contratti(tutti_attivi_rows, key_prefix="all")
 
-        # Tab 2: Sezione Scadenze (In scadenza entro 2 mesi / Scaduti)
+        # Tab 2: Sezione Scadenze
         with tabs[1]:
-            sub_tabs_scadenze = st.tabs(["⚠️ In Scadenza (entro 2 mesi)", "🚨 Scaduti"])
+            sub_tabs_scadenze = st.tabs(["⚠️ In Scadenza (entro 2 mesi)", "🚨 Scaduti", "🔄 Rinnovati Tacitamente"])
             
             with sub_tabs_scadenze[0]:
-                st.caption("Contratti attivi con scadenza prevista nei prossimi 60 giorni.")
+                st.caption("Contratti attivi (senza rinnovo tacito) con scadenza prevista nei prossimi 60 giorni.")
                 mostra_contratti(rows_in_scadenza, key_prefix="scad_exp")
                 
             with sub_tabs_scadenze[1]:
-                st.caption("Contratti attivi la cui data di scadenza è già trascorsa.")
+                st.caption("Contratti attivi (senza rinnovo tacito) la cui data di scadenza è già trascorsa.")
                 mostra_contratti(rows_scaduti, key_prefix="scad_over")
+
+            with sub_tabs_scadenze[2]:
+                st.caption("Contratti con rinnovo tacito che hanno superato il termine iniziale e sono tuttora attivi.")
+                mostra_contratti(rows_rinnovo_tacito, key_prefix="scad_tacito")
 
         # Tab 3: Ufficio Tecnico con Sotto-Tab per Sottocategorie
         with tabs[2]:
