@@ -1,7 +1,7 @@
 import streamlit as st
 import sqlite3
 import os
-from datetime import datetime
+from datetime import datetime, timedelta, date
 
 # Configurazione pagina
 st.set_page_config(page_title="Gestionale Contratti", page_icon="📄", layout="wide")
@@ -157,7 +157,33 @@ else:
     with col_right:
         st.subheader("📋 Archivio Contratti")
         
-        nomi_tabs = ["📂 Tutti Attivi"] + [f"🏢 {r}" for r in RAMI_AZIENDALI] + ["📦 Non più in vigore"]
+        # Calcolo scadenze e contratti scaduti
+        oggi = date.today()
+        oggi_str = oggi.strftime("%Y-%m-%d")
+        limite_60_giorni_str = (oggi + timedelta(days=60)).strftime("%Y-%m-%d")
+
+        conn = sqlite3.connect("database.sqlite")
+        cursor = conn.cursor()
+
+        SQL_SELECT = "SELECT id, cliente, titolo, oggetto, data_inizio, data_scadenza, importo, soggetto_istat, ramo, sottocategoria, file_path, note FROM contratti"
+
+        # Recupera contratti attivi per calcolare le scadenze
+        cursor.execute(f"{SQL_SELECT} WHERE ramo != 'Non più in vigore' ORDER BY data_scadenza ASC")
+        tutti_attivi_rows = cursor.fetchall()
+
+        rows_scaduti = [r for r in tutti_attivi_rows if r[5] and r[5] < oggi_str]
+        rows_in_scadenza = [r for r in tutti_attivi_rows if r[5] and oggi_str <= r[5] <= limite_60_giorni_str]
+
+        # Banner di notifica visivo in cima
+        if rows_scaduti or rows_in_scadenza:
+            msg = []
+            if rows_scaduti:
+                msg.append(f"🚨 **{len(rows_scaduti)}** contratt{'o' if len(rows_scaduti)==1 else 'i'} **SCADUTI**")
+            if rows_in_scadenza:
+                msg.append(f"⚠️ **{len(rows_in_scadenza)}** contratt{'o' if len(rows_in_scadenza)==1 else 'i'} **in scadenza entro 2 mesi**")
+            st.warning(" | ".join(msg))
+
+        nomi_tabs = ["📂 Tutti Attivi", "⏰ Scadenze"] + [f"🏢 {r}" for r in RAMI_AZIENDALI] + ["📦 Non più in vigore"]
         tabs = st.tabs(nomi_tabs)
         
         def mostra_contratti(rows, key_prefix=""):
@@ -240,18 +266,24 @@ else:
                             st.toast("Contratto eliminato con successo!")
                             st.rerun()
 
-        conn = sqlite3.connect("database.sqlite")
-        cursor = conn.cursor()
-
-        SQL_SELECT = "SELECT id, cliente, titolo, oggetto, data_inizio, data_scadenza, importo, soggetto_istat, ramo, sottocategoria, file_path, note FROM contratti"
-
         # Tab 1: Tutti i contratti attivi
         with tabs[0]:
-            cursor.execute(f"{SQL_SELECT} WHERE ramo != 'Non più in vigore' ORDER BY data_scadenza ASC")
-            mostra_contratti(cursor.fetchall(), key_prefix="all")
+            mostra_contratti(tutti_attivi_rows, key_prefix="all")
 
-        # Tab 2: Ufficio Tecnico con Sotto-Tab per Sottocategorie
+        # Tab 2: Sezione Scadenze (In scadenza entro 2 mesi / Scaduti)
         with tabs[1]:
+            sub_tabs_scadenze = st.tabs(["⚠️ In Scadenza (entro 2 mesi)", "🚨 Scaduti"])
+            
+            with sub_tabs_scadenze[0]:
+                st.caption("Contratti attivi con scadenza prevista nei prossimi 60 giorni.")
+                mostra_contratti(rows_in_scadenza, key_prefix="scad_exp")
+                
+            with sub_tabs_scadenze[1]:
+                st.caption("Contratti attivi la cui data di scadenza è già trascorsa.")
+                mostra_contratti(rows_scaduti, key_prefix="scad_over")
+
+        # Tab 3: Ufficio Tecnico con Sotto-Tab per Sottocategorie
+        with tabs[2]:
             sub_tabs = st.tabs(["📂 Tutti Ufficio Tecnico"] + [f"🏷️ {s}" for s in SOTTOCATEGORIE_UFFICIO_TECNICO])
             
             with sub_tabs[0]:
@@ -266,16 +298,16 @@ else:
                     )
                     mostra_contratti(cursor.fetchall(), key_prefix=f"ut_sub_{j}")
 
-        # Tab 3-7: Gli altri rami aziendali attivi
+        # Tab 4-8: Gli altri rami aziendali attivi
         for i, ramo_nome in enumerate(RAMI_AZIENDALI[1:]):
-            with tabs[i + 2]:
+            with tabs[i + 3]:
                 cursor.execute(
                     f"{SQL_SELECT} WHERE ramo = ? ORDER BY data_scadenza ASC",
                     (ramo_nome,)
                 )
                 mostra_contratti(cursor.fetchall(), key_prefix=f"branch_{i}")
 
-        # Tab 8: Non più in vigore
+        # Tab 9: Non più in vigore
         with tabs[-1]:
             cursor.execute(
                 f"{SQL_SELECT} WHERE ramo = 'Non più in vigore' ORDER BY data_scadenza DESC"
