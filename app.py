@@ -259,11 +259,29 @@ else:
                 )
                 mostra_contratti(cursor.fetchall())
 
-        # Tab 8: Non più in vigore
+        # Tab 8: Non più in vigore (Suddiviso in sotto-schede per Anno di scadenza)
         with tabs[-1]:
             cursor.execute(
-                "SELECT id, cliente, titolo, data_inizio, data_scadenza, importo, soggetto_istat, ramo, sottocategoria, file_path FROM contratti WHERE ramo = 'Non più in vigore' ORDER BY data_scadenza ASC"
+                "SELECT id, cliente, titolo, data_inizio, data_scadenza, importo, soggetto_istat, ramo, sottocategoria, file_path FROM contratti WHERE ramo = 'Non più in vigore' ORDER BY data_scadenza DESC"
             )
-            mostra_contratti(cursor.fetchall())
+            archived_rows = cursor.fetchall()
+            
+            if not archived_rows:
+                st.info("Nessun contratto presente nella sezione 'Non più in vigore'.")
+            else:
+                # Estrae gli anni unici dalle date dei contratti archiviati
+                anni_presenti = sorted(list(set([r[4][:4] for r in archived_rows if r[4] and len(r[4]) >= 4])), reverse=True)
+                
+                sub_tabs_anni = st.tabs(["📂 Tutti Archiviati"] + [f"📅 Anno {anno}" for anno in anni_presenti])
+                
+                # Sotto-Tab "Tutti Archiviati"
+                with sub_tabs_anni[0]:
+                    mostra_contratti(archived_rows)
+                
+                # Sotto-Tab per ciascun singolo Anno
+                for idx, anno in enumerate(anni_presenti):
+                    with sub_tabs_anni[idx + 1]:
+                        rows_anno = [r for r in archived_rows if r[4].startswith(anno)]
+                        mostra_contratti(rows_anno)
                 
         conn.close()
