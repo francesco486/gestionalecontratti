@@ -370,7 +370,7 @@ else:
                 )
                 filtro_tipo_tabs(cursor.fetchall(), f"branch_{i}")
 
-        # Tab 9: Non più in vigore
+        # Tab 9: Non più in vigore con filtri per tipo contratto generali e annuali
         with tabs[-1]:
             cursor.execute(
                 f"{SQL_SELECT} WHERE ramo = 'Non più in vigore' ORDER BY data_scadenza DESC"
