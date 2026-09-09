@@ -10,9 +10,10 @@ st.set_page_config(page_title="Gestionale Contratti", page_icon="📄", layout="
 UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-# Elenco dei Rami Aziendali e Sottocategorie
+# Elenco dei Rami Aziendali (Aggiunto "Servizio di Pesa" vicino a Ufficio Tecnico)
 RAMI_AZIENDALI = [
     "Ufficio Tecnico",
+    "Servizio di Pesa",
     "Ferroviario",
     "Amministrazione",
     "ICT",
@@ -361,7 +362,7 @@ else:
                     )
                     filtro_tipo_tabs(cursor.fetchall(), f"ut_sub_{j}")
 
-        # Tab 4-8: Gli altri rami aziendali attivi
+        # Tab dal 4 in poi: Gli altri rami aziendali (compreso Servizio di Pesa)
         for i, ramo_nome in enumerate(RAMI_AZIENDALI[1:]):
             with tabs[i + 3]:
                 cursor.execute(
@@ -370,7 +371,7 @@ else:
                 )
                 filtro_tipo_tabs(cursor.fetchall(), f"branch_{i}")
 
-        # Tab 9: Non più in vigore con filtri per tipo contratto generali e annuali
+        # Ultimo Tab: Non più in vigore
         with tabs[-1]:
             cursor.execute(
                 f"{SQL_SELECT} WHERE ramo = 'Non più in vigore' ORDER BY data_scadenza DESC"
