@@ -184,16 +184,11 @@ else:
         rows_in_scadenza = [r for r in tutti_attivi_rows if r[6] and oggi_str <= r[6] <= limite_60_giorni_str and r[10] != "Contratti con il rinnovo tacito"]
         rows_rinnovo_tacito = [r for r in tutti_attivi_rows if r[10] == "Contratti con il rinnovo tacito" and r[6] and r[6] < oggi_str]
 
-        # Calcolo totali economici attivi vs passivi
-        tot_attivi = sum(r[7] for r in tutti_attivi_rows if r[4] and "Attivo" in r[4])
-        tot_passivi = sum(r[7] for r in tutti_attivi_rows if r[4] and "Passivo" in r[4])
-        saldo = tot_attivi - tot_passivi
-
-        # Indicatori di sintesi finanziaria
+        # --- CONTATORI DI STATO CONTRATTI ---
         col_m1, col_m2, col_m3 = st.columns(3)
-        col_m1.metric("🟢 Totale Entrate (Attivi)", f"€ {tot_attivi:,.2f}")
-        col_m2.metric("🔴 Totale Uscite (Passivi)", f"€ {tot_passivi:,.2f}")
-        col_m3.metric("📊 Saldo Netto", f"€ {saldo:,.2f}")
+        col_m1.metric("🚨 Contratti Scaduti", f"{len(rows_scaduti)}")
+        col_m2.metric("⚠️ In Scadenza (entro 2 mesi)", f"{len(rows_in_scadenza)}")
+        col_m3.metric("📋 Totale Contratti Attivi", f"{len(tutti_attivi_rows)}")
 
         st.markdown("---")
 
@@ -206,7 +201,7 @@ else:
                 msg.append(f"⚠️ **{len(rows_in_scadenza)}** contratt{'o' if len(rows_in_scadenza)==1 else 'i'} **in scadenza entro 2 mesi**")
             st.warning(" | ".join(msg))
 
-        # Aggiunta la scheda Ricerca
+        # Schede archivio
         nomi_tabs = ["🔍 Ricerca", "📂 Tutti Attivi", "⏰ Scadenze"] + [f"🏢 {r}" for r in RAMI_AZIENDALI] + ["📦 Non più in vigore"]
         tabs = st.tabs(nomi_tabs)
         
