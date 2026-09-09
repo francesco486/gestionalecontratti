@@ -10,7 +10,7 @@ st.set_page_config(page_title="Gestionale Contratti", page_icon="📄", layout="
 UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-# Elenco dei Rami Aziendali (Aggiunto "Servizio di Pesa" vicino a Ufficio Tecnico)
+# Elenco dei Rami Aziendali (incluso Servizio di Pesa)
 RAMI_AZIENDALI = [
     "Ufficio Tecnico",
     "Servizio di Pesa",
@@ -162,7 +162,7 @@ else:
                 else:
                     st.error("⚠️ Compila i campi obbligatori: 'Nome Cliente', 'Titolo Contratto' e 'Oggetto del Contratto'.")
 
-    # --- ARCHIVIO DIVISO PER RAMI E SOTTOCATEGORIE ---
+    # --- ARCHIVIO DIVISO PER RAMI E SEARCH ---
     with col_right:
         st.subheader("📋 Archivio Contratti")
         
@@ -206,7 +206,8 @@ else:
                 msg.append(f"⚠️ **{len(rows_in_scadenza)}** contratt{'o' if len(rows_in_scadenza)==1 else 'i'} **in scadenza entro 2 mesi**")
             st.warning(" | ".join(msg))
 
-        nomi_tabs = ["📂 Tutti Attivi", "⏰ Scadenze"] + [f"🏢 {r}" for r in RAMI_AZIENDALI] + ["📦 Non più in vigore"]
+        # Aggiunta la scheda Ricerca
+        nomi_tabs = ["🔍 Ricerca", "📂 Tutti Attivi", "⏰ Scadenze"] + [f"🏢 {r}" for r in RAMI_AZIENDALI] + ["📦 Non più in vigore"]
         tabs = st.tabs(nomi_tabs)
         
         def mostra_contratti(rows, key_prefix=""):
@@ -326,12 +327,64 @@ else:
             with sub_tabs[2]:
                 mostra_contratti([r for r in rows if "Passivo" in r[4]], key_prefix=f"{prefix}_pass")
 
-        # Tab 1: Tutti i contratti attivi
+        # Tab 0: SEZIONE RICERCA AVANZATA
         with tabs[0]:
+            st.markdown("### 🔎 Ricerca Veloce nell'Archivio")
+            
+            col_s1, col_s2, col_s3 = st.columns([2, 1, 1])
+            with col_s1:
+                query_ricerca = st.text_input("Cerca per Cliente/Fornitore, Titolo, Oggetto o Note...", placeholder="Es. Mario Rossi, Manutenzione, Pesa...")
+            with col_s2:
+                filtro_ramo = st.selectbox("Filtra per Ramo", ["Tutti i Rami"] + RAMI_AZIENDALI + ["Non più in vigore"])
+            with col_s3:
+                filtro_tipo = st.selectbox("Filtra per Tipo", ["Tutti i Tipi", "🟢 Solamente Attivi", "🔴 Solamente Passivi"])
+            
+            include_archiviati = st.checkbox("Includi anche i contratti 'Non più in vigore'", value=True)
+
+            # Query SQL dinamica
+            cursor.execute(f"{SQL_SELECT} ORDER BY data_scadenza ASC")
+            tutti_i_contratti = cursor.fetchall()
+            
+            risultati = []
+            q = query_ricerca.lower().strip()
+            
+            for row in tutti_i_contratti:
+                c_id, c_cliente, c_titolo, c_oggetto, c_tipo, c_inizio, c_scadenza, c_importo, c_istat, c_ramo, c_subcat, c_file, c_note = row
+                
+                # Check ricerca testuale
+                text_match = (not q) or (
+                    q in c_cliente.lower() or 
+                    q in c_titolo.lower() or 
+                    q in (c_oggetto or "").lower() or 
+                    q in (c_note or "").lower()
+                )
+                
+                # Check Ramo
+                ramo_match = (filtro_ramo == "Tutti i Rami") or (c_ramo == filtro_ramo)
+                
+                # Check Tipo Contratto
+                tipo_match = True
+                if filtro_tipo == "🟢 Solamente Attivi":
+                    tipo_match = ("Attivo" in (c_tipo or ""))
+                elif filtro_tipo == "🔴 Solamente Passivi":
+                    tipo_match = ("Passivo" in (c_tipo or ""))
+                
+                # Check Archiviati
+                arch_match = True if include_archiviati else (c_ramo != "Non più in vigore")
+
+                if text_match and ramo_match and tipo_match and arch_match:
+                    risultati.append(row)
+
+            st.caption(f"Trovati **{len(risultati)}** contratti corrispondenti ai criteri di ricerca.")
+            st.markdown("---")
+            mostra_contratti(risultati, key_prefix="search_results")
+
+        # Tab 1: Tutti i contratti attivi
+        with tabs[1]:
             filtro_tipo_tabs(tutti_attivi_rows, "tab_all")
 
         # Tab 2: Sezione Scadenze
-        with tabs[1]:
+        with tabs[2]:
             sub_tabs_scadenze = st.tabs(["⚠️ In Scadenza (entro 2 mesi)", "🚨 Scaduti", "🔄 Rinnovati Tacitamente"])
             
             with sub_tabs_scadenze[0]:
@@ -347,7 +400,7 @@ else:
                 filtro_tipo_tabs(rows_rinnovo_tacito, "scad_tacito")
 
         # Tab 3: Ufficio Tecnico con Sotto-Tab per Sottocategorie
-        with tabs[2]:
+        with tabs[3]:
             sub_tabs = st.tabs(["📂 Tutti Ufficio Tecnico"] + [f"🏷️ {s}" for s in SOTTOCATEGORIE_UFFICIO_TECNICO])
             
             with sub_tabs[0]:
@@ -364,7 +417,7 @@ else:
 
         # Tab dal 4 in poi: Gli altri rami aziendali (compreso Servizio di Pesa)
         for i, ramo_nome in enumerate(RAMI_AZIENDALI[1:]):
-            with tabs[i + 3]:
+            with tabs[i + 4]:
                 cursor.execute(
                     f"{SQL_SELECT} WHERE ramo = ? ORDER BY data_scadenza ASC",
                     (ramo_nome,)
