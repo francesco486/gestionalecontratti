@@ -10,7 +10,7 @@ st.set_page_config(page_title="Gestionale Contratti", page_icon="📄", layout="
 UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-# Elenco dei Rami Aziendali (incluso Servizio di Pesa)
+# Elenco dei Rami Aziendali
 RAMI_AZIENDALI = [
     "Ufficio Tecnico",
     "Servizio di Pesa",
@@ -184,7 +184,7 @@ else:
         rows_in_scadenza = [r for r in tutti_attivi_rows if r[6] and oggi_str <= r[6] <= limite_60_giorni_str and r[10] != "Contratti con il rinnovo tacito"]
         rows_rinnovo_tacito = [r for r in tutti_attivi_rows if r[10] == "Contratti con il rinnovo tacito" and r[6] and r[6] < oggi_str]
 
-        # --- CONTATORI DI STATO CONTRATTI ---
+        # --- CONTATORI STATO CONTRATTI ---
         col_m1, col_m2, col_m3 = st.columns(3)
         col_m1.metric("🚨 Contratti Scaduti", f"{len(rows_scaduti)}")
         col_m2.metric("⚠️ In Scadenza (entro 2 mesi)", f"{len(rows_in_scadenza)}")
@@ -206,7 +206,7 @@ else:
         tabs = st.tabs(nomi_tabs)
         
         def mostra_contratti(rows, key_prefix=""):
-            """Funzione per renderizzare i contratti con chiavi widget univoche per scheda"""
+            """Funzione per renderizzare i contratti con supporto a modifica, eliminazione e archiviazione"""
             if not rows:
                 st.info("Nessun contratto presente in questa sezione.")
                 return
@@ -263,12 +263,91 @@ else:
                     if c_file and os.path.exists(c_file):
                         with open(c_file, "rb") as f:
                             st.download_button(
-                                label="📁 Scarica Allegato",
+                                label="📁 Scarica Allegato Attuale",
                                 data=f,
                                 file_name=os.path.basename(c_file),
                                 key=f"{key_prefix}_dl_{c_id}"
                             )
                     
+                    st.markdown("---")
+                    
+                    # --- SEZIONE MODIFICA CONTRATTO ---
+                    modifica_attiva = st.toggle("✏️ Modifica Contratto", key=f"{key_prefix}_toggle_mod_{c_id}")
+                    
+                    if modifica_attiva:
+                        st.markdown("#### ✏️ Modifica Dati del Contratto")
+                        
+                        # Parsing sicuro delle date per i campi di input
+                        try:
+                            dt_ini_val = datetime.strptime(c_inizio, "%Y-%m-%d").date() if c_inizio else date.today()
+                        except Exception:
+                            dt_ini_val = date.today()
+
+                        try:
+                            dt_scad_val = datetime.strptime(c_scadenza, "%Y-%m-%d").date() if c_scadenza else date.today()
+                        except Exception:
+                            dt_scad_val = date.today()
+
+                        ramo_idx = RAMI_AZIENDALI.index(c_ramo) if c_ramo in RAMI_AZIENDALI else 0
+                        tipo_idx = 1 if (c_tipo and "Passivo" in c_tipo) else 0
+                        subcat_idx = SOTTOCATEGORIE_UFFICIO_TECNICO.index(c_subcat) if (c_subcat and c_subcat in SOTTOCATEGORIE_UFFICIO_TECNICO) else 0
+
+                        with st.form(f"form_edit_{key_prefix}_{c_id}"):
+                            edit_ramo = st.selectbox("Ramo Aziendale", RAMI_AZIENDALI, index=ramo_idx, key=f"{key_prefix}_e_ramo_{c_id}")
+                            
+                            edit_subcat = ""
+                            if edit_ramo == "Ufficio Tecnico":
+                                edit_subcat = st.selectbox("Sottocategoria Ufficio Tecnico", SOTTOCATEGORIE_UFFICIO_TECNICO, index=subcat_idx, key=f"{key_prefix}_e_subcat_{c_id}")
+
+                            edit_tipo = st.selectbox("Tipo Contratto *", TIPI_CONTRATTO, index=tipo_idx, key=f"{key_prefix}_e_tipo_{c_id}")
+                            edit_cliente = st.text_input("Nome Cliente / Fornitore *", value=c_cliente, key=f"{key_prefix}_e_cli_{c_id}")
+                            edit_titolo = st.text_input("Titolo Contratto *", value=c_titolo, key=f"{key_prefix}_e_tit_{c_id}")
+                            edit_oggetto = st.text_area("Oggetto del Contratto *", value=c_oggetto, key=f"{key_prefix}_e_ogg_{c_id}")
+                            
+                            col_e_d1, col_e_d2 = st.columns(2)
+                            with col_e_d1:
+                                edit_inizio = st.date_input("Data Inizio", value=dt_ini_val, key=f"{key_prefix}_e_dt_i_{c_id}")
+                            with col_e_d2:
+                                edit_scadenza = st.date_input("Data Scadenza", value=dt_scad_val, key=f"{key_prefix}_e_dt_s_{c_id}")
+
+                            edit_importo = st.number_input("Importo (€)", value=float(c_importo) if c_importo else 0.0, step=100.0, key=f"{key_prefix}_e_imp_{c_id}")
+                            edit_istat = st.checkbox("Soggetto ad adeguamento ISTAT", value=(c_istat == "Sì"), key=f"{key_prefix}_e_istat_{c_id}")
+                            edit_note = st.text_area("Note (opzionale)", value=c_note if c_note else "", key=f"{key_prefix}_e_note_{c_id}")
+                            
+                            st.write(f"**Allegato attuale:** {os.path.basename(c_file) if c_file else 'Nessun file allegato'}")
+                            edit_file = st.file_uploader("Sostituisci o carica un nuovo Allegato (PDF/DOC)", type=["pdf", "doc", "docx"], key=f"{key_prefix}_e_file_{c_id}")
+
+                            salva_modifiche = st.form_submit_button("💾 Salva Modifiche")
+
+                            if salva_modifiche:
+                                if edit_cliente.strip() and edit_titolo.strip() and edit_oggetto.strip():
+                                    try:
+                                        nuovo_path_file = c_file
+                                        if edit_file is not None:
+                                            nuovo_path_file = os.path.join(UPLOAD_DIR, edit_file.name)
+                                            with open(nuovo_path_file, "wb") as f:
+                                                f.write(edit_file.getbuffer())
+
+                                        istat_val = "Sì" if edit_istat else "No"
+
+                                        conn = sqlite3.connect("database.sqlite")
+                                        cursor = conn.cursor()
+                                        cursor.execute('''
+                                            UPDATE contratti 
+                                            SET cliente = ?, titolo = ?, oggetto = ?, tipo_contratto = ?, data_inizio = ?, data_scadenza = ?, importo = ?, soggetto_istat = ?, ramo = ?, sottocategoria = ?, file_path = ?, note = ?
+                                            WHERE id = ?
+                                        ''', (edit_cliente.strip(), edit_titolo.strip(), edit_oggetto.strip(), edit_tipo, str(edit_inizio), str(edit_scadenza), edit_importo, istat_val, edit_ramo, edit_subcat, nuovo_path_file, edit_note.strip(), c_id))
+                                        
+                                        conn.commit()
+                                        conn.close()
+
+                                        st.toast("✅ Contratto aggiornato con successo!")
+                                        st.rerun()
+                                    except Exception as e:
+                                        st.error(f"❌ Errore durante l'aggiornamento: {e}")
+                                else:
+                                    st.error("⚠️ Compila i campi obbligatori: 'Nome Cliente', 'Titolo Contratto' e 'Oggetto del Contratto'.")
+
                     st.markdown("---")
                     col_b1, col_b2 = st.columns(2)
                     
